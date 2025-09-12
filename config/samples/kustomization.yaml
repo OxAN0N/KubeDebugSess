@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- ajou_v1alpha1_debugsession.yaml
+- ajou_v1alpha1_registrycredential.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

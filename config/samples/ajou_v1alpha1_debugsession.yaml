@@ -1,0 +1,9 @@
+apiVersion: ajou.oxan0n.me/v1alpha1
+kind: DebugSession
+metadata:
+  labels:
+    app.kubernetes.io/name: kubedebugsess
+    app.kubernetes.io/managed-by: kustomize
+  name: debugsession-sample
+spec:
+  # TODO(user): Add fields here
