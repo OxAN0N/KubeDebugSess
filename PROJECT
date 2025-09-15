@@ -5,26 +5,17 @@
 cliVersion: 4.8.0
 domain: oxan0n.me
 layout:
-- go.kubebuilder.io/v4
+  - go.kubebuilder.io/v4
 projectName: kubedebugsess
 repo: github.com/OxAN0N/KubeDebugSess
 resources:
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: oxan0n.me
-  group: ajou
-  kind: DebugSession
-  path: github.com/OxAN0N/KubeDebugSess/api/v1alpha1
-  version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: oxan0n.me
-  group: ajou
-  kind: RegistryCredential
-  path: github.com/OxAN0N/KubeDebugSess/api/v1alpha1
-  version: v1alpha1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: oxan0n.me
+    group: ajou
+    kind: DebugSession
+    path: github.com/OxAN0N/KubeDebugSess/api/v1alpha1
+    version: v1alpha1
 version: "3"
