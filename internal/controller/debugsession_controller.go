@@ -50,7 +50,6 @@ const targetPodIndexKey = "targetPodIndexKey"
 // +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=debugsessions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=debugsessions/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 func (r *DebugSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
