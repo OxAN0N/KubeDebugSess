@@ -1,0 +1,12 @@
+apiVersion: ajou.oxan0n.me/v1alpha1
+kind: DebugSession
+metadata:
+  labels:
+    app.kubernetes.io/name: kubedebugsess
+    app.kubernetes.io/managed-by: kustomize
+  name: debugsession-sample-qwer
+  namespace: test-app
+spec:
+  targetPodName: test-app-busybox-deploy-56668c5dc7-c9lj8
+  targetNamespace: test-app
+  debuggerImage: registry.gitlab.com/oxan0n/toki-dev/busybox:1.0
