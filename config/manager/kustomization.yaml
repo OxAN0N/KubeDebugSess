@@ -1,2 +1,6 @@
 resources:
-- manager.yaml
+  - manager.yaml
+images:
+  - name: controller
+    newName: docker.io/oxan0nme/kubedebugsess
+    newTag: v0.0.1
