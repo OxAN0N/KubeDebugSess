@@ -45,14 +45,13 @@ func (r *TerminatingReconciler) Reconcile(ctx context.Context, session *debugv1a
 	}
 
 	// 2. 정리 작업이 성공하면, Completed 상태로 전환합니다.
-	logger.Info("Successfully removed ephemeral container. Transitioning to Completed.")
+	logger.Info("Successfully terminated debugging session. Transitioning to Completed.")
 	now := metav1.NewTime(time.Now())
 	session.Status.TerminationTime = &now
 
 	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Completed, "Termination Completed")
 }
 
-// cleanupEphemeralContainer는 Pod에서 Ephemeral Container를 제거하는 로직을 담당합니다.
 func (r *TerminatingReconciler) cleanupEphemeralContainer(ctx context.Context, session *debugv1alpha1.DebugSession) error {
 
 	if session.Spec.TargetNamespace == "" {
@@ -82,15 +81,7 @@ func (r *TerminatingReconciler) cleanupEphemeralContainer(ctx context.Context, s
 		return fmt.Errorf("debugger container '%s' not found in pod '%s' during cleanup, the session has failed unexpectedly", debuggerName, pod.Name)
 	}
 
-	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers[:foundIndex], pod.Spec.EphemeralContainers[foundIndex+1:]...)
-
-	_, err = r.ClientSet.CoreV1().
-		Pods(pod.Namespace).
-		UpdateEphemeralContainers(ctx, pod.Name, pod, metav1.UpdateOptions{})
-
-	if err != nil {
-		return fmt.Errorf("failed to update ephemeral containers to remove debugger: %w", err)
-	}
+	// TODO: Logs Dump and upload to S3 (or Check)
 
 	return nil
 }

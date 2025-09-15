@@ -33,6 +33,7 @@ import (
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
 	"github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases"
+	_ "github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases/reconcilers"
 )
 
 // DebugSessionReconciler reconciles a DebugSession object
@@ -48,8 +49,6 @@ const targetPodIndexKey = "targetPodIndexKey"
 // +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=debugsessions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=debugsessions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=debugsessions/finalizers,verbs=update
-// +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=registrycredentials,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=ajou.oxan0n.me,resources=registrycredentials/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 func (r *DebugSessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

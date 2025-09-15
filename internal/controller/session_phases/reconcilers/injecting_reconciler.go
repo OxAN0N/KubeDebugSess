@@ -23,13 +23,13 @@ func init() {
 func NewInjectingReconciler(c client.Client, cs kubernetes.Interface) session_phases.PhaseReconciler {
 	return &InjectingReconciler{
 		Client:    c,
-		Clientset: cs,
+		ClientSet: cs,
 	}
 }
 
 type InjectingReconciler struct {
 	client.Client
-	Clientset kubernetes.Interface
+	ClientSet kubernetes.Interface
 }
 
 func (r *InjectingReconciler) Reconcile(ctx context.Context, session *debugv1alpha1.DebugSession) (ctrl.Result, error) {
@@ -72,7 +72,7 @@ func (r *InjectingReconciler) injectEphemeralContainer(ctx context.Context, sess
 
 	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
 
-	_, err := r.Clientset.CoreV1().
+	_, err := r.ClientSet.CoreV1().
 		Pods(session.Spec.TargetNamespace).
 		UpdateEphemeralContainers(ctx, podName, pod, metav1.UpdateOptions{})
 

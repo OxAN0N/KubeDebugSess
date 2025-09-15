@@ -3,6 +3,7 @@ package reconcilers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
 	"github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases"
@@ -46,6 +47,7 @@ type ActiveReconciler struct {
 func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1.DebugSession) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	logger.Info("Active Reconciler Started")
 	if session.Spec.TargetNamespace == "" {
 		session.Spec.TargetNamespace = session.Namespace
 	}
@@ -60,7 +62,7 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 
 	debuggerContainerName := fmt.Sprintf("debugger-%s", session.UID)
 
-	if pod.Status.EphemeralContainerStatuses != nil && len(pod.Status.EphemeralContainerStatuses) > 0 {
+	if len(pod.Status.EphemeralContainerStatuses) > 0 {
 		for _, containerStatus := range pod.Status.EphemeralContainerStatuses {
 			if containerStatus.Name == debuggerContainerName {
 				action, message := session_phases.AnalyzeContainerStatus(containerStatus)
@@ -75,6 +77,15 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 		}
 	}
 
+	for _, container := range pod.Spec.EphemeralContainers {
+		if container.Name == debuggerContainerName {
+			logger.Info("Ephemeral Container Statuses are not updated yet")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+	}
+
+	logger.Info("Can not find EphemeralContainerStatues")
 	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Debugger container not found.")
 }
 

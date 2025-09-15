@@ -23,12 +23,12 @@ func init() {
 }
 
 func NewPendingReconciler(client client.Client, cs kubernetes.Interface) session_phases.PhaseReconciler {
-	return &PendingReconciler{Client: client, Clientset: cs}
+	return &PendingReconciler{Client: client, ClientSet: cs}
 }
 
 type PendingReconciler struct {
 	client.Client
-	Clientset kubernetes.Interface
+	ClientSet kubernetes.Interface
 }
 
 func (r *PendingReconciler) Reconcile(ctx context.Context, session *debugv1alpha1.DebugSession) (ctrl.Result, error) {
