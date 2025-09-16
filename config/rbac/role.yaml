@@ -6,7 +6,6 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: manager-role
 rules:
-rules:
   - apiGroups:
       - ajou.oxan0n.me
     resources:
