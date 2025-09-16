@@ -44,6 +44,18 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - pods/ephemeralcontainers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
       - namespaces
     verbs:
       - get
