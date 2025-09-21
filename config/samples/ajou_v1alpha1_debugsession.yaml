@@ -4,9 +4,10 @@ metadata:
   labels:
     app.kubernetes.io/name: kubedebugsess
     app.kubernetes.io/managed-by: kustomize
-  name: debugsession-sample-qwer
+  name: debugsession-asdf
   namespace: test-app
 spec:
-  targetPodName: test-app-busybox-deploy-56668c5dc7-c9lj8
-  targetNamespace: test-app
-  debuggerImage: registry.gitlab.com/oxan0n/toki-dev/busybox:1.0
+  targetPodName: targetPodName
+  targetNamespace: targetNamespace
+  debuggerImage: debuggerImage
+  targetContainerName: targetContainerName
