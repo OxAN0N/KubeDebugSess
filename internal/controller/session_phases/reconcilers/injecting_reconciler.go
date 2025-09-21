@@ -60,6 +60,14 @@ func (r *InjectingReconciler) injectEphemeralContainer(ctx context.Context, sess
 		return fmt.Errorf("failed to find target Pod: %w", err)
 	}
 
+	if session.Spec.TargetContainerName == "" {
+		if len(pod.Spec.Containers) > 0 {
+			session.Spec.TargetContainerName = pod.Spec.Containers[0].Name
+		} else {
+			return fmt.Errorf("cannot default container name, pod has no containers")
+		}
+	}
+
 	ec := corev1.EphemeralContainer{
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 			Name:    fmt.Sprintf("debugger-%s", session.UID),
@@ -68,6 +76,7 @@ func (r *InjectingReconciler) injectEphemeralContainer(ctx context.Context, sess
 			Stdin:   true,
 			TTY:     true,
 		},
+		TargetContainerName: session.Spec.TargetContainerName,
 	}
 
 	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
