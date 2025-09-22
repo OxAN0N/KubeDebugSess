@@ -17,21 +17,32 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// terminalSizeQueue implements the remotecommand.TerminalSizeQueue interface.
+type terminalSizeQueue struct {
+	ch chan remotecommand.TerminalSize
+}
+
+// Next returns the new terminal size from the channel.
+func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
+	size, ok := <-q.ch
+	if !ok {
+		return nil
+	}
+	return &size
+}
+
 var upgrader = websocket.Upgrader{
-	// In production, you should validate the origin.
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
-// Server implements the HTTP handler for the debug proxy.
 type Server struct {
 	Clientset *kubernetes.Clientset
 	RESTCfg   *rest.Config
-	K8sClient client.Client // Client to read Custom Resources like DebugSession
+	K8sClient client.Client
 }
 
-// NewServer creates a new proxy server.
 func NewServer(clientset *kubernetes.Clientset, restCfg *rest.Config, k8sClient client.Client) *Server {
 	return &Server{
 		Clientset: clientset,
@@ -40,7 +51,6 @@ func NewServer(clientset *kubernetes.Clientset, restCfg *rest.Config, k8sClient 
 	}
 }
 
-// ServeHTTP handles the incoming HTTP request, including token authorization.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	ns := q.Get("ns")
@@ -48,28 +58,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	containerName := q.Get("container")
 
 	if ns == "" || podName == "" || containerName == "" {
-		http.Error(w, "Missing required query parameters: ns, pod, container", http.StatusBadRequest)
+		http.Error(w, "Missing required query parameters", http.StatusBadRequest)
 		return
 	}
-
-	// --- Authorization Logic: Validate the one-time token ---
 	authHeader := r.Header.Get("Authorization")
 	tokenParts := strings.Split(authHeader, " ")
 	if len(tokenParts) != 2 || !strings.EqualFold(tokenParts[0], "bearer") {
-		http.Error(w, "Invalid or missing Authorization header. Expected 'Bearer <token>'.", http.StatusUnauthorized)
+		http.Error(w, "Invalid Authorization header", http.StatusUnauthorized)
 		return
 	}
 	receivedToken := tokenParts[1]
-
-	// Find the corresponding DebugSession to validate the token.
-	// We derive the session UID from the container name.
 	sessionUID := strings.TrimPrefix(containerName, "debugger-")
 	var debugSession debugv1alpha1.DebugSession
 	found := false
 	sessionList := &debugv1alpha1.DebugSessionList{}
-
-	// List all sessions and find the one with the matching UID.
-	// For performance in a large cluster, you might index this.
 	if err := s.K8sClient.List(r.Context(), sessionList); err != nil {
 		log.Printf("Error listing debug sessions: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -82,20 +84,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-
 	if !found {
 		http.Error(w, "Debug session not found", http.StatusNotFound)
 		return
 	}
-
-	// Check if the session is ready and the token matches.
 	if !debugSession.Status.ReadyForAttach || debugSession.Status.OneTimeToken != receivedToken {
 		http.Error(w, "Unauthorized: Invalid or expired token", http.StatusUnauthorized)
 		return
 	}
-	// --- End of Authorization Logic ---
 
-	// Upgrade the connection to a WebSocket
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade connection for pod %s: %v", podName, err)
@@ -103,15 +100,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
-	// Stream between the WebSocket and the container
 	if err := s.stream(r.Context(), ns, podName, containerName, ws); err != nil {
 		log.Printf("Stream error for pod %s/%s: %v", ns, podName, err)
-		// Try to send a close message to the client before returning.
 		_ = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, err.Error()))
 	}
 }
 
-// stream handles the bidirectional data flow between the WebSocket and the K8s attach stream.
+// stream function now correctly handles the remote command protocol framing.
 func (s *Server) stream(ctx context.Context, ns, podName, containerName string, ws *websocket.Conn) error {
 	req := s.Clientset.CoreV1().RESTClient().
 		Post().
@@ -133,7 +128,7 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 	stdinReader, stdinWriter := io.Pipe()
 	stdoutReader, stdoutWriter := io.Pipe()
 
-	// Goroutine to read from WebSocket and write to container's stdin
+	// Goroutine to read from WebSocket, prepend the stdin channel byte, and write to the container's stdin.
 	go func() {
 		defer stdinWriter.Close()
 		for {
@@ -141,20 +136,22 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 			if err != nil {
 				return
 			}
-			if _, err := stdinWriter.Write(payload); err != nil {
+			// ✅ THIS IS THE FIX (Part 1): Prepend the stdin channel byte (0) to the payload.
+			if _, err := stdinWriter.Write(append([]byte{0}, payload...)); err != nil {
 				return
 			}
 		}
 	}()
 
-	// Goroutine to read from container's stdout and write to WebSocket
+	// Goroutine to read from container's stdout/stderr and write to WebSocket.
 	go func() {
-		defer stdoutReader.Close()
-		buf := make([]byte, 2048)
+		defer ws.Close()
+		buf := make([]byte, 2049) // 1 byte for channel ID + 2048 for data
 		for {
 			n, err := stdoutReader.Read(buf)
 			if n > 0 {
-				if err := ws.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+				// ✅ THIS IS THE FIX (Part 2): Strip the first byte (channel ID) before sending to client.
+				if err := ws.WriteMessage(websocket.BinaryMessage, buf[1:n]); err != nil {
 					return
 				}
 			}
@@ -164,12 +161,16 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 		}
 	}()
 
-	// Start the streaming
-	err = executor.Stream(remotecommand.StreamOptions{
-		Stdin:  stdinReader,
-		Stdout: stdoutWriter,
-		Stderr: stdoutWriter,
-		Tty:    true,
+	resizeChan := make(chan remotecommand.TerminalSize, 1)
+	resizeQueue := &terminalSizeQueue{ch: resizeChan}
+	resizeChan <- remotecommand.TerminalSize{Width: 80, Height: 24} // Send initial terminal size
+
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:             stdinReader,
+		Stdout:            stdoutWriter,
+		Stderr:            stdoutWriter,
+		Tty:               true,
+		TerminalSizeQueue: resizeQueue,
 	})
 
 	return err
