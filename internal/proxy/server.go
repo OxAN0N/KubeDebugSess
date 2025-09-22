@@ -17,6 +17,42 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// wsconn is a wrapper around *websocket.Conn that implements the io.ReadWriter interface.
+type wsconn struct {
+	conn       *websocket.Conn
+	readBuffer []byte
+}
+
+// Read implements the io.Reader interface for the websocket connection.
+func (w *wsconn) Read(p []byte) (n int, err error) {
+	if len(w.readBuffer) > 0 {
+		n = copy(p, w.readBuffer)
+		w.readBuffer = w.readBuffer[n:]
+		return n, nil
+	}
+	_, message, err := w.conn.ReadMessage()
+	if err != nil {
+		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			log.Printf("websocket close error: %v", err)
+		}
+		return 0, io.EOF
+	}
+	n = copy(p, message)
+	if n < len(message) {
+		w.readBuffer = message[n:]
+	}
+	return n, nil
+}
+
+// Write implements the io.Writer interface for the websocket connection.
+func (w *wsconn) Write(p []byte) (n int, err error) {
+	err = w.conn.WriteMessage(websocket.BinaryMessage, p)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
 // terminalSizeQueue implements the remotecommand.TerminalSizeQueue interface.
 type terminalSizeQueue struct {
 	ch chan remotecommand.TerminalSize
@@ -106,7 +142,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// stream function now correctly handles the remote command protocol framing.
 func (s *Server) stream(ctx context.Context, ns, podName, containerName string, ws *websocket.Conn) error {
 	req := s.Clientset.CoreV1().RESTClient().
 		Post().
@@ -126,9 +161,8 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 	}
 
 	stdinReader, stdinWriter := io.Pipe()
-	stdoutReader, stdoutWriter := io.Pipe()
 
-	// Goroutine to read from WebSocket, prepend the stdin channel byte, and write to the container's stdin.
+	// Goroutine to handle client input (WebSocket -> stdin)
 	go func() {
 		defer stdinWriter.Close()
 		for {
@@ -136,39 +170,27 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 			if err != nil {
 				return
 			}
-			// ✅ THIS IS THE FIX (Part 1): Prepend the stdin channel byte (0) to the payload.
-			if _, err := stdinWriter.Write(append([]byte{0}, payload...)); err != nil {
+			// ✅ THIS IS THE FIX: Append a newline character to every message from the client.
+			// This acts as the "Enter" key for the remote shell.
+			payload = append(payload, '\n')
+			if _, err := stdinWriter.Write(payload); err != nil {
 				return
 			}
 		}
 	}()
 
-	// Goroutine to read from container's stdout/stderr and write to WebSocket.
-	go func() {
-		defer ws.Close()
-		buf := make([]byte, 2049) // 1 byte for channel ID + 2048 for data
-		for {
-			n, err := stdoutReader.Read(buf)
-			if n > 0 {
-				// ✅ THIS IS THE FIX (Part 2): Strip the first byte (channel ID) before sending to client.
-				if err := ws.WriteMessage(websocket.BinaryMessage, buf[1:n]); err != nil {
-					return
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
+	// We use our wsconn wrapper for stdout/stderr to simplify writing back to the client.
+	streamer := &wsconn{conn: ws}
 	resizeChan := make(chan remotecommand.TerminalSize, 1)
 	resizeQueue := &terminalSizeQueue{ch: resizeChan}
-	resizeChan <- remotecommand.TerminalSize{Width: 80, Height: 24} // Send initial terminal size
+	resizeChan <- remotecommand.TerminalSize{Width: 120, Height: 40}
 
+	// The executor now reads from our pipe (which has the added newline)
+	// and writes directly to our websocket wrapper.
 	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             stdinReader,
-		Stdout:            stdoutWriter,
-		Stderr:            stdoutWriter,
+		Stdout:            streamer,
+		Stderr:            streamer,
 		Tty:               true,
 		TerminalSizeQueue: resizeQueue,
 	})
