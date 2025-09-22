@@ -2,7 +2,10 @@ package reconcilers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"time"
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
@@ -16,19 +19,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// ActionHandler는 ReasonAction에 따라 실행될 함수의 타입을 정의합니다.
+// ActionHandler is a function type for handling different container states.
 type ActionHandler func(context.Context, *debugv1alpha1.DebugSession, string) (ctrl.Result, error)
 
 func init() {
 	session_phases.Register(debugv1alpha1.Active, NewActiveReconciler)
 }
 
+// NewActiveReconciler creates a new reconciler for the Active phase.
 func NewActiveReconciler(client client.Client, cs kubernetes.Interface) session_phases.PhaseReconciler {
 	r := &ActiveReconciler{
 		Client:    client,
-		ClientSet: cs,
+		Clientset: cs,
 	}
-	// TODO: Refactor for OCP
 	r.actionHandlers = map[session_phases.ReasonAction]ActionHandler{
 		session_phases.ActionRetry:   r.handleRetry,
 		session_phases.ActionFail:    r.handleFail,
@@ -38,16 +41,17 @@ func NewActiveReconciler(client client.Client, cs kubernetes.Interface) session_
 	return r
 }
 
+// ActiveReconciler handles DebugSession resources in the Active phase.
 type ActiveReconciler struct {
 	client.Client
-	ClientSet      kubernetes.Interface
+	Clientset      kubernetes.Interface
 	actionHandlers map[session_phases.ReasonAction]ActionHandler
 }
 
+// Reconcile checks the ephemeral container status, generates a token when ready, and handles state transitions.
 func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1.DebugSession) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	logger.Info("Active Reconciler Started")
 	if session.Spec.TargetNamespace == "" {
 		session.Spec.TargetNamespace = session.Namespace
 	}
@@ -58,55 +62,103 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 		if errors.IsNotFound(err) {
 			return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Target pod not found.")
 		}
+		return ctrl.Result{}, err
 	}
 
 	debuggerContainerName := fmt.Sprintf("debugger-%s", session.UID)
+	session.Status.DebuggingContainerName = debuggerContainerName
 
-	if len(pod.Status.EphemeralContainerStatuses) > 0 {
-		for _, containerStatus := range pod.Status.EphemeralContainerStatuses {
-			if containerStatus.Name == debuggerContainerName {
-				action, message := session_phases.AnalyzeContainerStatus(containerStatus)
+	for _, containerStatus := range pod.Status.EphemeralContainerStatuses {
+		if containerStatus.Name == debuggerContainerName {
+			// If container is running and not yet ready, generate token and update status.
+			if containerStatus.State.Running != nil && !session.Status.ReadyForAttach {
+				logger.Info("Ephemeral container is running. Generating one-time session token.")
 
-				if handler, ok := r.actionHandlers[action]; ok {
-					return handler(ctx, session, message)
+				token, err := generateSecureToken(32) // Generate a 32-byte (64-char hex) token
+				if err != nil {
+					logger.Error(err, "Failed to generate session token")
+					return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Failed to generate token")
 				}
 
-				logger.Info("No handler defined for action, waiting.", "action", action)
+				session.Status.ReadyForAttach = true
+				session.Status.OneTimeToken = token
+				session.Status.Message = buildConnectionString(session) // Build the user-friendly connection guide
+
+				if err := r.Status().Update(ctx, session); err != nil {
+					logger.Error(err, "Failed to update session status with token")
+					return ctrl.Result{}, err
+				}
 				return ctrl.Result{}, nil
 			}
+
+			// Analyze the container status for further actions (retry, fail, etc.)
+			action, message := session_phases.AnalyzeContainerStatus(containerStatus)
+			if handler, ok := r.actionHandlers[action]; ok {
+				if action != session_phases.ActionWait {
+					session.Status.ReadyForAttach = false // No longer ready if not waiting
+				}
+				return handler(ctx, session, message)
+			}
+			return ctrl.Result{}, nil
 		}
 	}
 
-	for _, container := range pod.Spec.EphemeralContainers {
-		if container.Name == debuggerContainerName {
-			logger.Info("Ephemeral Container Statuses are not updated yet")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-
-	}
-
-	logger.Info("Can not find EphemeralContainerStatues")
-	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Debugger container not found.")
+	logger.Info("Ephemeral container status not found yet, requeueing.")
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
-// handleRetry는 재시도가 필요한 상태를 처리합니다.
+// buildConnectionString creates the two-step connection instructions for the user.
+func buildConnectionString(session *debugv1alpha1.DebugSession) string {
+	bastionHost := os.Getenv("BASTION_HOST")
+	if bastionHost == "" {
+		bastionHost = "your-user@bastion.example.com" // Default bastion host
+	}
+	proxyServiceHost := "debug-proxy-svc.kubedebugsess-system.svc"
+	proxyServicePort := "80"
+	localPort := "8080"
+
+	instructions := fmt.Sprintf(`Session is ready. Open TWO terminals and follow the steps:
+
+--- Terminal 1: Create a secure tunnel ---
+1. Run this command and leave it running. It forwards local port %s to the debug proxy via the bastion host.
+   ssh -L %s:%s:%s %s
+
+--- Terminal 2: Connect to the debug session ---
+2. Once the tunnel is active, run this command in a new terminal. It uses the one-time token for authorization.
+   wscat -H "Authorization: Bearer %s" -c "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
+		localPort, localPort, proxyServiceHost, proxyServicePort, bastionHost,
+		session.Status.OneTimeToken,
+		localPort,
+		session.Spec.TargetNamespace,
+		session.Spec.TargetPodName,
+		session.Status.DebuggingContainerName,
+	)
+	return instructions
+}
+
+// generateSecureToken creates a cryptographically secure, random hex string.
+func generateSecureToken(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// --- Handler functions for different container states ---
 func (r *ActiveReconciler) handleRetry(ctx context.Context, session *debugv1alpha1.DebugSession, message string) (ctrl.Result, error) {
-	session.Status.RetryCount = 1 // 재시도 카운트 시작
+	session.Status.RetryCount = 1
 	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Retrying, message)
 }
 
-// handleFail은 즉시 실패가 필요한 상태를 처리합니다.
 func (r *ActiveReconciler) handleFail(ctx context.Context, session *debugv1alpha1.DebugSession, message string) (ctrl.Result, error) {
 	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, message)
 }
 
-// handleSucceed는 성공적으로 완료된 상태를 처리합니다.
 func (r *ActiveReconciler) handleSucceed(ctx context.Context, session *debugv1alpha1.DebugSession, message string) (ctrl.Result, error) {
 	return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Terminating, message)
 }
 
-// handleWait은 정상 대기가 필요한 상태를 처리합니다.
 func (r *ActiveReconciler) handleWait(ctx context.Context, session *debugv1alpha1.DebugSession, message string) (ctrl.Result, error) {
-	// 정상 상태이므로 아무것도 하지 않고 다음 Reconcile을 기다립니다.
 	return ctrl.Result{}, nil
 }

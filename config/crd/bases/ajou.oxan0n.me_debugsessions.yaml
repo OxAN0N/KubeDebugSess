@@ -21,6 +21,9 @@ spec:
     - jsonPath: .status.phase
       name: Status
       type: string
+    - jsonPath: .status.readyForAttach
+      name: Ready
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -47,54 +50,42 @@ spec:
           metadata:
             type: object
           spec:
-            description: spec defines the desired state of DebugSession
+            description: DebugSessionSpec defines the desired state of a DebugSession,
+              as specified by the user.
             properties:
               debuggerImage:
-                description: |-
-                  DebuggerImage is the container image to use for the debugging session.
-                  This image must contain all necessary debugging tools (e.g., netshoot, gdb, tcpdump).
-                  This field is required.
-                minLength: 1
+                description: DebuggerImage is the container image to use for the debugging
+                  session.
                 type: string
               maxRetryCount:
                 default: 3
-                description: |-
-                  MaxRetryCount is the maximum number of times to retry a session setup for recoverable errors.
-                  If not specified, it defaults to 3.
+                description: MaxRetryCount is the maximum number of times to retry
+                  a session setup for recoverable errors.
                 format: int32
-                minimum: 0
                 type: integer
               targetContainerName:
-                description: |-
-                  TargetContainerName is the name of a specific container within the target Pod to debug.
-                  If omitted, the debug container will be attached to the Pod without sharing a process namespace with a specific container.
-                  This field is optional.
+                description: TargetContainerName is the name of a specific container
+                  within the target Pod to debug.
                 type: string
               targetNamespace:
-                description: |-
-                  TargetNamespace is the namespace where the target Pod is located.
-                  If omitted, the namespace of this DebugSession object will be used by default.
-                  This field is optional.
+                description: TargetNamespace is the namespace where the target Pod
+                  is located.
                 type: string
               targetPodName:
-                description: |-
-                  TargetPodName is the name of the Pod to which the debug container will be attached.
-                  This field is required.
-                minLength: 1
+                description: TargetPodName is the name of the Pod to which the debug
+                  container will be attached.
                 type: string
             required:
             - debuggerImage
             - targetPodName
             type: object
           status:
-            description: status defines the observed state of DebugSession
+            description: DebugSessionStatus defines the observed state of a DebugSession,
+              as reported by the controller.
             properties:
               conditions:
-                description: |-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
+                description: Conditions provides detailed observations of the resource's
+                  current state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -153,34 +144,39 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              ephemeralContainerName:
-                description: |-
-                  EphemeralContainerName is the actual, unique name of the ephemeral container created by the controller.
-                  This is useful for direct interaction with the container via `kubectl`.
-                  This field is managed by the controller.
+              debuggingContainerName:
+                description: DebuggingContainerName is the actual, unique name of
+                  the ephemeral container created by the controller.
                 type: string
               message:
+                description: Message provides a human-readable summary of the session's
+                  status, including connection instructions.
+                type: string
+              oneTimeToken:
                 description: |-
-                  Message provides a human-readable summary of the session's status, especially for error reporting.
-                  This field is managed by the controller.
+                  OneTimeToken stores a short-lived token for authorizing the session connection.
+                  This token must be passed in the Authorization header by the client.
                 type: string
               phase:
-                description: |-
-                  Phase represents the high-level summary of the session's current lifecycle stage.
-                  This field is managed by the controller.
+                description: Phase represents the high-level summary of the session's
+                  current lifecycle stage.
                 type: string
+              readyForAttach:
+                description: ReadyForAttach indicates if the debug container is running
+                  and ready for connection.
+                type: boolean
               retryCount:
+                description: RetryCount tracks the number of retries for recoverable
+                  errors.
                 type: integer
               startTime:
-                description: |-
-                  StartTime is the timestamp when the controller successfully initiated the debug session (e.g., attached the container).
-                  This field is managed by the controller.
+                description: StartTime is the timestamp when the controller successfully
+                  initiated the debug session.
                 format: date-time
                 type: string
               terminationTime:
-                description: |-
-                  TerminationTime is the timestamp when the session was completed or failed.
-                  This field is managed by the controller.
+                description: TerminationTime is the timestamp when the session was
+                  completed or failed.
                 format: date-time
                 type: string
             type: object

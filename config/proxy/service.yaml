@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: debug-proxy-svc
+  namespace: kubedebugsess-system
+spec:
+  selector:
+    app: debug-proxy
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: http

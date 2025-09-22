@@ -7,7 +7,6 @@ metadata:
   name: debugsession-asdf
   namespace: test-app
 spec:
-  targetPodName: targetPodName
-  targetNamespace: targetNamespace
-  debuggerImage: debuggerImage
-  targetContainerName: targetContainerName
+  targetPodName: test-app-busybox-deploy-56668c5dc7-tvz9f
+  targetNamespace: test-app
+  debuggerImage: busybox

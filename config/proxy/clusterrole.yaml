@@ -1,0 +1,13 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: debug-proxy-role
+rules:
+  # Allow creating the 'attach' subresource for pods
+  - apiGroups: [""]
+    resources: ["pods/attach"]
+    verbs: ["create", "get"]
+  # Allow reading DebugSession custom resources for token validation
+  - apiGroups: ["ajou.oxan0n.me"]
+    resources: ["debugsessions"]
+    verbs: ["get", "list", "watch"]
