@@ -1,0 +1,16 @@
+controllerManager:
+  container:
+    image:
+      repository: docker.io/oxan0nme/kubedebugsess
+      tag: v0.0.3
+aws:
+  config:
+    name: kubedebugsess-config
+    keys:
+      region: AWS_REGION
+      bucket: S3_BUCKET_NAME
+  secret:
+    name: kubedebugsess-aws
+    keys:
+      accessKey: AWS_ACCESS_KEY_ID
+      secretKey: AWS_SECRET_ACCESS_KEY

@@ -27,3 +27,5 @@ go.work
 *.swp
 *.swo
 *~
+
+*.tgz

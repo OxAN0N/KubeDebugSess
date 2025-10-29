@@ -12,6 +12,7 @@ import (
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
 	"github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -41,18 +42,20 @@ func NewTerminatingReconciler(c client.Client, cs kubernetes.Interface) session_
 	accessKey := os.Getenv("AWS_ACCESS_KEY_ID")
 	secretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
 
-	if region == "" || bucket == "" || accessKey == "" || secretKey == "" {
-		panic("missing required AWS configuration: AWS_REGION / S3_BUCKET_NAME / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY")
-	}
+	var cfg aws.Config
+	var err error
 
-	cfg, err := config.LoadDefaultConfig(context.Background(),
+	cfg, err = config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(region),
-		config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
-		),
 	)
 	if err != nil {
-		panic(fmt.Sprintf("failed to load AWS config: %v", err))
+		panic(fmt.Sprintf("failed to load default AWS config: %v", err))
+	}
+
+	if accessKey != "" && secretKey != "" {
+		cfg.Credentials = aws.NewCredentialsCache(
+			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
+		)
 	}
 
 	s3Client := s3.NewFromConfig(cfg)
