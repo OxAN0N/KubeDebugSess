@@ -1,0 +1,200 @@
+{{- if .Values.crd.enable }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: debugsessions.ajou.oxan0n.me
+spec:
+  group: ajou.oxan0n.me
+  names:
+    kind: DebugSession
+    listKind: DebugSessionList
+    plural: debugsessions
+    singular: debugsession
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetPodName
+      name: TargetPod
+      type: string
+    - jsonPath: .status.phase
+      name: Status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DebugSession is the Schema for the debugsessions API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of DebugSession
+            properties:
+              debuggerImage:
+                description: |-
+                  DebuggerImage is the container image to use for the debugging session.
+                  This image must contain all necessary debugging tools (e.g., netshoot, gdb, tcpdump).
+                  This field is required.
+                minLength: 1
+                type: string
+              maxRetryCount:
+                default: 3
+                description: |-
+                  MaxRetryCount is the maximum number of times to retry a session setup for recoverable errors.
+                  If not specified, it defaults to 3.
+                format: int32
+                minimum: 0
+                type: integer
+              targetContainerName:
+                description: |-
+                  TargetContainerName is the name of a specific container within the target Pod to debug.
+                  If omitted, the debug container will be attached to the Pod without sharing a process namespace with a specific container.
+                  This field is optional.
+                type: string
+              targetNamespace:
+                description: |-
+                  TargetNamespace is the namespace where the target Pod is located.
+                  If omitted, the namespace of this DebugSession object will be used by default.
+                  This field is optional.
+                type: string
+              targetPodName:
+                description: |-
+                  TargetPodName is the name of the Pod to which the debug container will be attached.
+                  This field is required.
+                minLength: 1
+                type: string
+            required:
+            - debuggerImage
+            - targetPodName
+            type: object
+          status:
+            description: status defines the observed state of DebugSession
+            properties:
+              conditions:
+                description: |-
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              ephemeralContainerName:
+                description: |-
+                  EphemeralContainerName is the actual, unique name of the ephemeral container created by the controller.
+                  This is useful for direct interaction with the container via `kubectl`.
+                  This field is managed by the controller.
+                type: string
+              message:
+                description: |-
+                  Message provides a human-readable summary of the session's status, especially for error reporting.
+                  This field is managed by the controller.
+                type: string
+              phase:
+                description: |-
+                  Phase represents the high-level summary of the session's current lifecycle stage.
+                  This field is managed by the controller.
+                type: string
+              retryCount:
+                type: integer
+              startTime:
+                description: |-
+                  StartTime is the timestamp when the controller successfully initiated the debug session (e.g., attached the container).
+                  This field is managed by the controller.
+                format: date-time
+                type: string
+              terminationTime:
+                description: |-
+                  TerminationTime is the timestamp when the session was completed or failed.
+                  This field is managed by the controller.
+                format: date-time
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end -}}
