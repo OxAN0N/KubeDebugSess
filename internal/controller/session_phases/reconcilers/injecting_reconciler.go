@@ -73,8 +73,12 @@ func (r *InjectingReconciler) injectEphemeralContainer(ctx context.Context, sess
 			Name:    fmt.Sprintf("debugger-%s", session.UID),
 			Image:   session.Spec.DebuggerImage,
 			Command: []string{"/bin/sh"},
-			Stdin:   true,
-			TTY:     true,
+			Args: []string{
+				"-c",
+				"script -q -f -c /bin/sh /dev/stdout",
+			},
+			Stdin: true,
+			TTY:   true,
 		},
 		TargetContainerName: session.Spec.TargetContainerName,
 	}
