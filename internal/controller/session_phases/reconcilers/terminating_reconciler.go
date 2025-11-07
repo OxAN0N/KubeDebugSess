@@ -163,12 +163,12 @@ func (r *TerminatingReconciler) fetchEphemeralLogs(ctx context.Context, pod *cor
 	}
 	defer stream.Close()
 
-	var logs []byte
+	var logs bytes.Buffer
 	buf := make([]byte, 4096)
 	for {
 		n, err := stream.Read(buf)
 		if n > 0 {
-			logs = append(logs, buf[:n]...)
+			logs.Write(buf[:n])
 		}
 		if err == io.EOF {
 			break
@@ -178,8 +178,42 @@ func (r *TerminatingReconciler) fetchEphemeralLogs(ctx context.Context, pod *cor
 		}
 	}
 
-	logger.Info("Fetched ephemeral container logs", "size", len(logs))
-	return logs, nil
+	rawLogs := logs.Bytes()
+	cleaned := r.cleanLogData(rawLogs)
+
+	logger.Info("Fetched and cleaned ephemeral container logs", "rawSize", len(rawLogs), "cleanSize", len(cleaned))
+	return cleaned, nil
+}
+
+func (r *TerminatingReconciler) cleanLogData(data []byte) []byte {
+	var cleaned []byte
+	inEscape := false
+
+	for i := 0; i < len(data); i++ {
+		b := data[i]
+
+		if b == 0x1b {
+			inEscape = true
+			continue
+		}
+
+		if inEscape {
+			if (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || b == '~' {
+				inEscape = false
+			}
+			continue
+		}
+
+		if b == '\r' || b == '\x07' || b == '\x08' {
+			continue
+		}
+
+		cleaned = append(cleaned, b)
+	}
+
+	// 연속 공백/개행 정리 (선택)
+	cleaned = bytes.ReplaceAll(cleaned, []byte("\n\n\n"), []byte("\n\n"))
+	return cleaned
 }
 
 func (r *TerminatingReconciler) uploadLogsToS3(ctx context.Context, pod *corev1.Pod, containerName string, data []byte) (string, error) {
