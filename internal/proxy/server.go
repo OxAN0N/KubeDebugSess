@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
 
@@ -17,13 +18,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// wsconn is a wrapper around *websocket.Conn that implements the io.ReadWriter interface.
+// wsconn implements io.ReadWriter for websocket
 type wsconn struct {
 	conn       *websocket.Conn
 	readBuffer []byte
 }
 
-// Read implements the io.Reader interface for the websocket connection.
 func (w *wsconn) Read(p []byte) (n int, err error) {
 	if len(w.readBuffer) > 0 {
 		n = copy(p, w.readBuffer)
@@ -32,9 +32,6 @@ func (w *wsconn) Read(p []byte) (n int, err error) {
 	}
 	_, message, err := w.conn.ReadMessage()
 	if err != nil {
-		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-			log.Printf("websocket close error: %v", err)
-		}
 		return 0, io.EOF
 	}
 	n = copy(p, message)
@@ -44,7 +41,6 @@ func (w *wsconn) Read(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// Write implements the io.Writer interface for the websocket connection.
 func (w *wsconn) Write(p []byte) (n int, err error) {
 	err = w.conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
@@ -53,12 +49,11 @@ func (w *wsconn) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// terminalSizeQueue implements the remotecommand.TerminalSizeQueue interface.
+// terminalSizeQueue implements remotecommand.TerminalSizeQueue
 type terminalSizeQueue struct {
 	ch chan remotecommand.TerminalSize
 }
 
-// Next returns the new terminal size from the channel.
 func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
 	size, ok := <-q.ch
 	if !ok {
@@ -68,18 +63,20 @@ func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:       func(r *http.Request) bool { return true },
+	EnableCompression: false,
 }
 
+// Server provides WebSocket <-> SPDY attach streaming
 type Server struct {
 	Clientset *kubernetes.Clientset
 	RESTCfg   *rest.Config
 	K8sClient client.Client
 }
 
+// NewServer constructs a Server
 func NewServer(clientset *kubernetes.Clientset, restCfg *rest.Config, k8sClient client.Client) *Server {
+	log.Println("[KubeDebugSess Proxy] Server started (v1)") // ✅ Version banner
 	return &Server{
 		Clientset: clientset,
 		RESTCfg:   restCfg,
@@ -87,7 +84,16 @@ func NewServer(clientset *kubernetes.Clientset, restCfg *rest.Config, k8sClient 
 	}
 }
 
+// ServeHTTP handles /attach (and responds OK for others)
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// ✅ Allow health probes or port-forward checks
+	if r.URL.Path != "/attach" {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+		return
+	}
+
+	// Actual attach logic
 	q := r.URL.Query()
 	ns := q.Get("ns")
 	podName := q.Get("pod")
@@ -97,6 +103,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing required query parameters", http.StatusBadRequest)
 		return
 	}
+
 	authHeader := r.Header.Get("Authorization")
 	tokenParts := strings.Split(authHeader, " ")
 	if len(tokenParts) != 2 || !strings.EqualFold(tokenParts[0], "bearer") {
@@ -105,14 +112,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	receivedToken := tokenParts[1]
 	sessionUID := strings.TrimPrefix(containerName, "debugger-")
+
 	var debugSession debugv1alpha1.DebugSession
-	found := false
 	sessionList := &debugv1alpha1.DebugSessionList{}
 	if err := s.K8sClient.List(r.Context(), sessionList); err != nil {
 		log.Printf("Error listing debug sessions: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	found := false
 	for _, sess := range sessionList.Items {
 		if string(sess.UID) == sessionUID {
 			debugSession = sess
@@ -162,7 +170,7 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 
 	stdinReader, stdinWriter := io.Pipe()
 
-	// Goroutine to handle client input (WebSocket -> stdin)
+	// Goroutine to handle WebSocket → stdin
 	go func() {
 		defer stdinWriter.Close()
 		for {
@@ -170,7 +178,7 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 			if err != nil {
 				return
 			}
-			payload = append(payload, '\n')
+			// payload = append(payload, '\n')
 			if _, err := stdinWriter.Write(payload); err != nil {
 				return
 			}
@@ -181,6 +189,22 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 	resizeChan := make(chan remotecommand.TerminalSize, 1)
 	resizeQueue := &terminalSizeQueue{ch: resizeChan}
 	resizeChan <- remotecommand.TerminalSize{Width: 120, Height: 40}
+
+	// Optional: ping keepalive
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				_ = ws.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(5*time.Second))
+			}
+		}
+	}()
+	defer close(done)
 
 	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             stdinReader,

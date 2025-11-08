@@ -125,7 +125,7 @@ func buildConnectionString(session *debugv1alpha1.DebugSession) string {
 
 --- Terminal 2: Connect to the debug session ---
 2. Once the tunnel is active, run this command in a new terminal. It uses the one-time token for authorization.
-   websocat --header= "Authorization: Bearer %s" "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
+   websocat --no-line --binary --header="Authorization: Bearer %s" "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
 		localPort, localPort, proxyServiceHost, proxyServicePort, bastionHost,
 		session.Status.OneTimeToken,
 		localPort,
