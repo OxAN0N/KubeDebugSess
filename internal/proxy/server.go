@@ -170,8 +170,6 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 			if err != nil {
 				return
 			}
-			// ✅ THIS IS THE FIX: Append a newline character to every message from the client.
-			// This acts as the "Enter" key for the remote shell.
 			payload = append(payload, '\n')
 			if _, err := stdinWriter.Write(payload); err != nil {
 				return
@@ -179,14 +177,11 @@ func (s *Server) stream(ctx context.Context, ns, podName, containerName string, 
 		}
 	}()
 
-	// We use our wsconn wrapper for stdout/stderr to simplify writing back to the client.
 	streamer := &wsconn{conn: ws}
 	resizeChan := make(chan remotecommand.TerminalSize, 1)
 	resizeQueue := &terminalSizeQueue{ch: resizeChan}
 	resizeChan <- remotecommand.TerminalSize{Width: 120, Height: 40}
 
-	// The executor now reads from our pipe (which has the added newline)
-	// and writes directly to our websocket wrapper.
 	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:             stdinReader,
 		Stdout:            streamer,

@@ -113,7 +113,7 @@ func buildConnectionString(session *debugv1alpha1.DebugSession) string {
 	if bastionHost == "" {
 		bastionHost = "your-user@bastion.example.com" // Default bastion host
 	}
-	proxyServiceHost := "debug-proxy-svc.kubedebugsess-system.svc"
+	proxyServiceHost := "kubedebugsess-proxy-svc.kubedebugsess-system.svc"
 	proxyServicePort := "80"
 	localPort := "8080"
 
@@ -125,7 +125,7 @@ func buildConnectionString(session *debugv1alpha1.DebugSession) string {
 
 --- Terminal 2: Connect to the debug session ---
 2. Once the tunnel is active, run this command in a new terminal. It uses the one-time token for authorization.
-   wscat -H "Authorization: Bearer %s" -c "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
+   websocat -H "Authorization: Bearer %s" -c "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
 		localPort, localPort, proxyServiceHost, proxyServicePort, bastionHost,
 		session.Status.OneTimeToken,
 		localPort,

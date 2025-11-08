@@ -1,7 +1,7 @@
 # Image URL for the controller
-IMG ?= controller:latest
+IMG ?= docker.io/oxan0nme/kubedebugsess-manager:v0.0.1
 # Image URL for the debug-proxy
-PROXY_IMG ?= debug-proxy:latest
+PROXY_IMG ?= docker.io/oxan0nme/kubedebugsess-proxy:v0.0.1
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
