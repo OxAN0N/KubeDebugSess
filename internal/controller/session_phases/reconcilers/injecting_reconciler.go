@@ -72,9 +72,19 @@ func (r *InjectingReconciler) injectEphemeralContainer(ctx context.Context, sess
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 			Name:    fmt.Sprintf("debugger-%s", session.UID),
 			Image:   session.Spec.DebuggerImage,
-			Command: []string{"/bin/sh", "-lc"},
+			Command: []string{"/bin/sh", "-c"},
 			Args: []string{
-				`script -q -f -c "/bin/sh -i" /dev/null`,
+				`
+			trap 'exit 0' TERM INT;
+			( sleep ${TTL:-300} && kill 1 ) &
+			exec script -q -f -c "/bin/sh -i" /dev/null
+			`,
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name:  "TTL",
+					Value: fmt.Sprintf("%d", session.Spec.TTL),
+				},
 			},
 			Stdin: true,
 			TTY:   true,
