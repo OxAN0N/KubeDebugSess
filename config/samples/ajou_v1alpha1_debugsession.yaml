@@ -11,3 +11,4 @@ spec:
   targetNamespace: test-app
   debuggerImage: registry.gitlab.com/oxan0n/toki-dev/busybox:1.0
   targetContainerName: test-app-busybox
+  ttl: 120

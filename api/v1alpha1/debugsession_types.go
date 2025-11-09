@@ -40,6 +40,11 @@ type DebugSessionSpec struct {
 	// +kubebuilder:validation:Required
 	DebuggerImage string `json:"debuggerImage"`
 
+	// TTL is the maximum seconds for debugging sessions.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=300
+	TTL int32 `json:"ttl,omitempty"`
+
 	// MaxRetryCount is the maximum number of times to retry a session setup for recoverable errors.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=3

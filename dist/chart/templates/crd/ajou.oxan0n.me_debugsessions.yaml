@@ -81,6 +81,11 @@ spec:
                 description: TargetPodName is the name of the Pod to which the debug
                   container will be attached.
                 type: string
+              ttl:
+                default: 300
+                description: TTL is the maximum seconds for debugging sessions.
+                format: int32
+                type: integer
             required:
             - debuggerImage
             - targetPodName
