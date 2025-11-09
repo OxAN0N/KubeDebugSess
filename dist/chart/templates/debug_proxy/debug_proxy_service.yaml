@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: kubedebugsess-proxy
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app.kubernetes.io/component: kubedebugsess-proxy
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -17,3 +17,4 @@ spec:
       protocol: TCP
       port: 80
       targetPort: {{ .Values.debugProxy.port }}
+      nodePort: {{ .Values.debugProxy.nodePort }}

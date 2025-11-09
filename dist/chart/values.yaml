@@ -105,4 +105,5 @@ debugProxy:
       cpu: 200m
       memory: 128Mi
   port: 8080
+  nodePort: 32080
   logLevel: info
