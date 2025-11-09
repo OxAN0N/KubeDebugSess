@@ -69,4 +69,12 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - ""
+    resources:
+      - "services"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
 {{- end -}}
