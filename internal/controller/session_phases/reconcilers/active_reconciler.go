@@ -12,6 +12,7 @@ import (
 	"github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -80,9 +81,15 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 					return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Failed to generate token")
 				}
 
+				proxySvcIP, err := getProxyServiceClusterIP(ctx, r.Clientset)
+				if err != nil {
+					logger.Error(err, "Failed to get proxy service ClusterIP")
+					return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Failed to get proxy service IP")
+				}
+
 				session.Status.ReadyForAttach = true
 				session.Status.OneTimeToken = token
-				session.Status.Message = buildConnectionString(session) // Build the user-friendly connection guide
+				session.Status.Message = buildConnectionString(session, proxySvcIP)
 
 				if err := r.Status().Update(ctx, session); err != nil {
 					logger.Error(err, "Failed to update session status with token")
@@ -107,13 +114,24 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
 
+func getProxyServiceClusterIP(ctx context.Context, clientset kubernetes.Interface) (string, error) {
+	svc, err := clientset.CoreV1().Services("kubedebugsess-system").Get(ctx, "kubedebugsess-proxy-svc", metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	if svc.Spec.ClusterIP == "" {
+		return "", fmt.Errorf("service has no clusterIP assigned")
+	}
+	return svc.Spec.ClusterIP, nil
+}
+
 // buildConnectionString creates the two-step connection instructions for the user.
-func buildConnectionString(session *debugv1alpha1.DebugSession) string {
+func buildConnectionString(session *debugv1alpha1.DebugSession, proxyIP string) string {
 	bastionHost := os.Getenv("BASTION_HOST")
 	if bastionHost == "" {
 		bastionHost = "your-user@bastion.example.com" // Default bastion host
 	}
-	proxyServiceHost := "kubedebugsess-proxy-svc.kubedebugsess-system.svc"
+
 	proxyServicePort := "80"
 	localPort := "8080"
 
@@ -126,7 +144,7 @@ func buildConnectionString(session *debugv1alpha1.DebugSession) string {
 --- Terminal 2: Connect to the debug session ---
 2. Once the tunnel is active, run this command in a new terminal. It uses the one-time token for authorization.
    websocat --no-line --binary --header="Authorization: Bearer %s" "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
-		localPort, localPort, proxyServiceHost, proxyServicePort, bastionHost,
+		localPort, localPort, proxyIP, proxyServicePort, bastionHost,
 		session.Status.OneTimeToken,
 		localPort,
 		session.Spec.TargetNamespace,
