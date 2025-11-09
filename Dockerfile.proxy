@@ -1,0 +1,18 @@
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /workspace
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /workspace/proxy ./cmd/proxy/main.go
+
+
+FROM alpine:3.16
+
+RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /workspace/proxy /proxy
+
+CMD ["/proxy"]

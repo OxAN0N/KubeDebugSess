@@ -1,8 +1,8 @@
 controllerManager:
   container:
     image:
-      repository: docker.io/oxan0nme/kubedebugsess
-      tag: v0.0.3
+      repository: docker.io/oxan0nme/kubedebugsess-manager
+      tag: v0.0.1
 aws:
   config:
     name: kubedebugsess-config

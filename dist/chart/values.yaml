@@ -3,8 +3,8 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: docker.io/oxan0nme/kubedebugsess
-      tag: v0.0.3
+      repository: docker.io/oxan0nme/kubedebugsess-manager
+      tag: v0.0.1
     imagePullPolicy: IfNotPresent
     args:
       - "--leader-elect"
@@ -87,3 +87,22 @@ aws:
     keys:
       accessKey: AWS_ACCESS_KEY_ID
       secretKey: AWS_SECRET_ACCESS_KEY
+
+debugProxy:
+  replicas: 1
+  image:
+    repository: docker.io/oxan0nme/kubedebugsess-proxy
+    tag: v0.0.1
+    pullPolicy: IfNotPresent
+  serviceAccount:
+    create: true
+    name: kubedebugsess-proxy-sa
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  port: 8080
+  logLevel: info

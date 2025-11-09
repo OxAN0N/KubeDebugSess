@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubedebugsess-proxy
+  namespace: kubedebugsess-system
+  labels:
+    app: kubedebugsess-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubedebugsess-proxy
+  template:
+    metadata:
+      labels:
+        app: kubedebugsess-proxy
+    spec:
+      serviceAccountName: kubedebugsess-proxy-sa
+      containers:
+        - name: proxy
+          # WARNING: Replace this with the actual image path for your kubedebugsess proxy
+          image: docker.io/oxan0nme/kubedebugsess-proxy:v0.0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
