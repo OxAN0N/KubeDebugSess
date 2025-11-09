@@ -4,7 +4,7 @@ metadata:
   name: kubedebugsess-proxy-svc
   namespace: kubedebugsess-system
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: kubedebugsess-proxy
   ports:
@@ -12,3 +12,4 @@ spec:
       protocol: TCP
       port: 80
       targetPort: 8080
+      nodePort: 32080
