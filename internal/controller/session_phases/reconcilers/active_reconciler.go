@@ -1,11 +1,15 @@
 package reconcilers
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	debugv1alpha1 "github.com/OxAN0N/KubeDebugSess/api/v1alpha1"
@@ -90,6 +94,9 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 				session.Status.ReadyForAttach = true
 				session.Status.OneTimeToken = token
 				session.Status.Message = buildConnectionString(session, nodeIP, nodePort)
+
+				// 🔔 Send webhook notification if configured
+				sendWebhookIfConfigured(session)
 
 				if err := r.Status().Update(ctx, session); err != nil {
 					logger.Error(err, "Failed to update session status with token")
@@ -185,6 +192,82 @@ func generateSecureToken(length int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// sendWebhookIfConfigured sends the session message to a webhook if WEBHOOK_URL is set.
+// Slack / Discord detection is done by inspecting the webhook domain.
+func sendWebhookIfConfigured(session *debugv1alpha1.DebugSession) {
+	webhookURL := os.Getenv("WEBHOOK_URL")
+	if webhookURL == "" {
+		return
+	}
+
+	payload := buildWebhookPayload(webhookURL, session)
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to marshal webhook payload: %v\n", err)
+		return
+	}
+
+	go func() {
+		req, err := http.NewRequest("POST", webhookURL, bytes.NewBuffer(data))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create webhook request: %v\n", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to send webhook: %v\n", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			fmt.Fprintf(os.Stderr, "webhook returned non-2xx status: %s\n", resp.Status)
+		}
+	}()
+}
+
+// buildWebhookPayload builds the message body depending on webhook domain type.
+func buildWebhookPayload(webhookURL string, session *debugv1alpha1.DebugSession) interface{} {
+	msg := session.Status.Message
+	ns := session.Spec.TargetNamespace
+	pod := session.Spec.TargetPodName
+	container := session.Status.DebuggingContainerName
+
+	switch {
+	case strings.Contains(webhookURL, "hooks.slack.com"):
+		return map[string]interface{}{
+			"text": fmt.Sprintf(
+				"*KubeDebugSess – Debug session ready*\nNamespace: `%s`\nPod: `%s`\nContainer: `%s`\n\n```%s```",
+				ns, pod, container, msg),
+		}
+
+	case strings.Contains(webhookURL, "discord.com/api/webhooks"):
+		return map[string]interface{}{
+			"embeds": []map[string]interface{}{
+				{
+					"title":       "🐳 KubeDebugSess – Debug session ready",
+					"description": fmt.Sprintf("**Namespace:** `%s`\n**Pod:** `%s`\n**Container:** `%s`\n\n```\n%s\n```", ns, pod, container, msg),
+					"color":       0x00bfff,
+					"timestamp":   time.Now().UTC().Format(time.RFC3339),
+				},
+			},
+		}
+
+	default:
+		return map[string]interface{}{
+			"namespace": ns,
+			"pod":       pod,
+			"container": container,
+			"message":   msg,
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+	}
 }
 
 // --- Handler functions for different container states ---

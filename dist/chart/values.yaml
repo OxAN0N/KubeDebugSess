@@ -34,6 +34,8 @@ controllerManager:
       capabilities:
         drop:
           - "ALL"
+    env:
+      WEBHOOK_URL: ""
   securityContext:
     runAsNonRoot: true
     seccompProfile:
