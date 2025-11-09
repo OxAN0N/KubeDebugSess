@@ -7,7 +7,7 @@ metadata:
   name: debugsession-asdf
   namespace: test-app
 spec:
-  targetPodName: targetPodName
-  targetNamespace: targetNamespace
-  debuggerImage: debuggerImage
-  targetContainerName: targetContainerName
+  targetPodName: test-app-busybox-deploy-9c89c9ff7-cvh6r
+  targetNamespace: test-app
+  debuggerImage: registry.gitlab.com/oxan0n/toki-dev/busybox:1.0
+  targetContainerName: test-app-busybox
