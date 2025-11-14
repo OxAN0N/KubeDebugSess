@@ -5,6 +5,7 @@ Copyright 2025.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -21,6 +22,34 @@ const (
 	Completed   SessionPhase = "Completed"
 	Failed      SessionPhase = "Failed"
 )
+
+// DebugSecurityContext defines security-related options for the ephemeral debug container.
+type DebugSecurityContext struct {
+	// +kubebuilder:default=true
+	// +kubebuilder:validation:Optional
+	RunAsNonRoot *bool `json:"runAsNonRoot,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	RunAsUser *int64 `json:"runAsUser,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	RunAsGroup *int64 `json:"runAsGroup,omitempty"`
+
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	Privileged *bool `json:"privileged,omitempty"`
+
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	AllowPrivilegeEscalation *bool `json:"allowPrivilegeEscalation,omitempty"`
+
+	// +kubebuilder:default=true
+	// +kubebuilder:validation:Optional
+	ReadOnlyRootFilesystem *bool `json:"readOnlyRootFilesystem,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Capabilities *corev1.Capabilities `json:"capabilities,omitempty"`
+}
 
 // DebugSessionSpec defines the desired state of a DebugSession, as specified by the user.
 type DebugSessionSpec struct {
@@ -49,6 +78,9 @@ type DebugSessionSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=3
 	MaxRetryCount int32 `json:"maxRetryCount,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	DebugSecurity *DebugSecurityContext `json:"debugSecurity,omitempty"`
 }
 
 // DebugSessionStatus defines the observed state of a DebugSession, as reported by the controller.
