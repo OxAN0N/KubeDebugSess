@@ -3,8 +3,6 @@ package reconcilers
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -16,7 +14,6 @@ import (
 	"github.com/OxAN0N/KubeDebugSess/internal/controller/session_phases"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -75,37 +72,17 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 
 	for _, containerStatus := range pod.Status.EphemeralContainerStatuses {
 		if containerStatus.Name == debuggerContainerName {
-			// If container is running and not yet ready, generate token and update status.
 			if containerStatus.State.Running != nil && !session.Status.ReadyForAttach {
-				logger.Info("Ephemeral container is running. Generating one-time session token.")
-
-				token, err := generateSecureToken(32) // 32 bytes → 64 hex chars
-				if err != nil {
-					logger.Error(err, "Failed to generate session token")
-					return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Failed to generate token")
-				}
-
-				nodeIP, nodePort, err := getProxyServiceNodeInfo(ctx, r.Clientset)
-				if err != nil {
-					logger.Error(err, "Failed to get proxy NodePort info")
-					return session_phases.UpdateSessionStatus(ctx, r.Client, session, debugv1alpha1.Failed, "Failed to get proxy service NodePort info")
-				}
 
 				session.Status.ReadyForAttach = true
-				session.Status.OneTimeToken = token
-				session.Status.Message = buildConnectionString(session, nodeIP, nodePort)
-
-				// 🔔 Send webhook notification if configured
 				sendWebhookIfConfigured(session)
-
 				if err := r.Status().Update(ctx, session); err != nil {
-					logger.Error(err, "Failed to update session status with token")
+					logger.Error(err, "Failed to Update before Attach")
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{}, nil
 			}
 
-			// Analyze container state for further action.
 			action, message := session_phases.AnalyzeContainerStatus(containerStatus)
 			if handler, ok := r.actionHandlers[action]; ok {
 				if action != session_phases.ActionWait {
@@ -119,79 +96,6 @@ func (r *ActiveReconciler) Reconcile(ctx context.Context, session *debugv1alpha1
 
 	logger.Info("Ephemeral container status not found yet, requeueing.")
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-}
-
-// getProxyServiceNodeInfo retrieves NodeIP and NodePort for the proxy service.
-func getProxyServiceNodeInfo(ctx context.Context, clientset kubernetes.Interface) (string, string, error) {
-	svc, err := clientset.CoreV1().Services("kubedebugsess-system").Get(ctx, "kubedebugsess-proxy-svc", metav1.GetOptions{})
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get service: %w", err)
-	}
-
-	if len(svc.Spec.Ports) == 0 {
-		return "", "", fmt.Errorf("no ports found in service")
-	}
-
-	nodePort := fmt.Sprintf("%d", svc.Spec.Ports[0].NodePort)
-	nodeList, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return "", "", fmt.Errorf("failed to list nodes: %w", err)
-	}
-	if len(nodeList.Items) == 0 {
-		return "", "", fmt.Errorf("no nodes found in cluster")
-	}
-
-	// Try to find an accessible IP
-	var nodeIP string
-	for _, addr := range nodeList.Items[0].Status.Addresses {
-		if addr.Type == corev1.NodeExternalIP {
-			nodeIP = addr.Address
-			break
-		}
-		if addr.Type == corev1.NodeInternalIP && nodeIP == "" {
-			nodeIP = addr.Address
-		}
-	}
-	if nodeIP == "" {
-		nodeIP = "127.0.0.1" // fallback (e.g., kind or minikube)
-	}
-
-	return nodeIP, nodePort, nil
-}
-
-// buildConnectionString creates the user instructions for connecting to the debug proxy.
-func buildConnectionString(session *debugv1alpha1.DebugSession, nodeIP, nodePort string) string {
-	bastionHost := os.Getenv("BASTION_HOST")
-	if bastionHost == "" {
-		bastionHost = "your-user@bastion.example.com"
-	}
-	localPort := "8080"
-
-	return fmt.Sprintf(`Session is ready. Open TWO terminals and follow the steps:
-
---- Terminal 1: Create a secure tunnel ---
-1. Run this command and leave it running. It forwards local port %s to the debug proxy via the bastion host.
-   ssh -L %s:%s:%s %s
-
---- Terminal 2: Connect to the debug session ---
-2. Once the tunnel is active, run this command in a new terminal. It uses the one-time token for authorization.
-   websocat --no-line --binary --header="Authorization: Bearer %s" "ws://localhost:%s/attach?ns=%s&pod=%s&container=%s"`,
-		localPort, localPort, nodeIP, nodePort, bastionHost,
-		session.Status.OneTimeToken,
-		localPort,
-		session.Spec.TargetNamespace,
-		session.Spec.TargetPodName,
-		session.Status.DebuggingContainerName,
-	)
-}
-
-// generateSecureToken creates a cryptographically secure, random hex string.
-func generateSecureToken(length int) (string, error) {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
 }
 
 // sendWebhookIfConfigured sends the session message to a webhook if WEBHOOK_URL is set.

@@ -7,8 +7,17 @@ metadata:
   name: debugsession-asdf
   namespace: test-app
 spec:
-  targetPodName: test-app-busybox-deploy-9c89c9ff7-cvh6r
+  targetPodName: test-app-busybox-deploy-5c9458ffcd-dwj8g
   targetNamespace: test-app
-  debuggerImage: registry.gitlab.com/oxan0n/toki-dev/busybox:1.0
   targetContainerName: test-app-busybox
-  ttl: 120
+  debuggerImage: registry.gitlab.com/oxan0n/toki-dev/debugger-slim:6.0
+  ttl: 600
+  debugSecurity:
+    runAsUser: 0
+    runAsNonRoot: false
+    privileged: false
+    allowPrivilegeEscalation: true
+    readOnlyRootFilesystem: true
+    capabilities:
+      add:
+        - ALL

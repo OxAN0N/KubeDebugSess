@@ -59,6 +59,48 @@ spec:
             description: DebugSessionSpec defines the desired state of a DebugSession,
               as specified by the user.
             properties:
+              debugSecurity:
+                description: DebugSecurityContext defines security-related options
+                  for the ephemeral debug container.
+                properties:
+                  allowPrivilegeEscalation:
+                    default: false
+                    type: boolean
+                  capabilities:
+                    description: Adds and removes POSIX capabilities from running
+                      containers.
+                    properties:
+                      add:
+                        description: Added capabilities
+                        items:
+                          description: Capability represent POSIX capabilities type
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      drop:
+                        description: Removed capabilities
+                        items:
+                          description: Capability represent POSIX capabilities type
+                          type: string
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    type: object
+                  privileged:
+                    default: false
+                    type: boolean
+                  readOnlyRootFilesystem:
+                    default: true
+                    type: boolean
+                  runAsGroup:
+                    format: int64
+                    type: integer
+                  runAsNonRoot:
+                    default: true
+                    type: boolean
+                  runAsUser:
+                    format: int64
+                    type: integer
+                type: object
               debuggerImage:
                 description: DebuggerImage is the container image to use for the debugging
                   session.
