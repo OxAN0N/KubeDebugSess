@@ -21,3 +21,5 @@ spec:
     capabilities:
       add:
         - ALL
+      drop:
+        - SYS_PTRACE
