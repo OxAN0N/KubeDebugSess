@@ -270,7 +270,6 @@ func buildSecurityContext(sec *debugv1alpha1.DebugSecurityContext) *corev1.Secur
 			sc.ReadOnlyRootFilesystem = sec.ReadOnlyRootFilesystem
 		}
 
-		// Capabilities는 조금 더 정교하게 병합
 		if sec.Capabilities != nil {
 			add := sec.Capabilities.Add
 			drop := sec.Capabilities.Drop
